@@ -30,14 +30,26 @@ class AnalyticalSolution(Model):
 
 
 class GradientDescent(Model, ABC):
-    def __init__(self, alpha, tolerance,
-                 regularization, reg_lmb, descent_method, loss):
+    def __init__(self, alpha: float, tolerance: float,
+                 regularization: str, reg_lmb: float, descent_method: str, loss: LossFunction):
         self.w = None
-        self._alpha = alpha
-        self._tolerance = tolerance
+        if alpha > 0:
+            self._alpha = alpha
+        else:
+            raise Exception('Alpha must be positive')
+        if tolerance is None or tolerance > 0:
+            self._tolerance = tolerance
+        else:
+            raise Exception('Tolerance must be positive')
         self.__reg_lmb = reg_lmb
-        self.__regularization = regularization
-        self.__descent_method = descent_method
+        if regularization in ['L1', 'L2']:
+            self.__regularization = regularization
+        else:
+            raise Exception('No such regularization method')
+        if descent_method in ['const', 'normalization const']:
+            self.__descent_method = descent_method
+        else:
+            raise Exception('No such descent method')
         self.__loss = loss
 
     def _get_gradient(self, X, y):
@@ -47,6 +59,8 @@ class GradientDescent(Model, ABC):
             gradient = -(X * (y - sigmoid(X.dot(self.w)))).sum(axis=0)
         elif self.__loss == MAE:
             gradient = np.sign(X.dot(self.w) - y)
+        else:
+            raise Exception('Gradient cannot be found for this loss-function')
 
         if 'normalization' in self.__descent_method:
             gradient /= np.linalg.norm(gradient)
@@ -69,18 +83,21 @@ class StandardGradientDescent(GradientDescent):
     def __init__(self, alpha, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
                  descent_method: str = 'const', loss: LossFunction = MSE):
         super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
-        self.__S = S
+        if S > 0:
+            self.__S = S
+        else:
+            raise Exception('S must be positive')
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         X = add_ones_feature(X)
 
         i = 0
         self.w = np.zeros(X.shape[1])
-        y_ = X.dot(self.w)
-        while i < self.__S and MSE.get_loss(y_, y) > self._tolerance:
+        y_pred = X.dot(self.w)
+        while i < self.__S and (self.__loss == LogisticLoss or self.__loss.get_loss(y_pred, y) > self._tolerance):
             self.w -= self._alpha * self._get_gradient(X, y)
             self.regularize(X.shape[0])
-            y_ = X.dot(self.w)
+            y_pred = X.dot(self.w)
             i += 1
 
 
