@@ -1,11 +1,21 @@
 import random
-
+from abc import ABC, abstractmethod
 import numpy as np
 from data import add_ones_feature
-from quality_functional import MSE
+from quality_functional import LossFunction, MSE
 
 
-class AnalyticalSolution:
+class Model(ABC):
+    @abstractmethod
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        pass
+
+    @abstractmethod
+    def predict(self, X: np.ndarray):
+        pass
+
+
+class AnalyticalSolution(Model):
     w: np.ndarray
 
     def __init__(self):
@@ -20,20 +30,27 @@ class AnalyticalSolution:
         return design_matrix.dot(self.w)
 
 
-class GradientDescend:
-    
+class GradientDescend(Model, ABC):
+    def __init__(self):
+        self.w = None
+        self.reg_lmb = None
+        self.regularization = None
 
-class StandardGradientDescend:
-    alpha: float
-    w: np.ndarray
-    S: int
-    tolerance: float
-    regularization: str
-    regularizer: float
-    descend_method: str
+    @abstractmethod
+    def get_gradient(self, X, y):
+        pass
 
-    def __init__(self, alpha, S: int, tolerance: float = 1, regularization=None, regularizer=None,
-                 descend_method: str = 'const'):
+    def regularize(self, N: int):
+        if self.regularization == 'L2':
+            self.w -= (2 * self.reg_lmb / N) * self.w
+        elif self.regularization == 'L1':
+            self.w -= (self.reg_lmb / N) * np.sign(self.w)
+
+
+class StandardGradientDescend(GradientDescend):
+    def __init__(self, alpha, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
+                 descend_method: str = 'const', loss: LossFunction = MSE):
+        self.w = None
         self.descend_method = descend_method
         if descend_method == 'const' or descend_method == 'normalization_const':
             self.alpha = alpha
@@ -42,31 +59,26 @@ class StandardGradientDescend:
         self.S = S
         self.tolerance = tolerance
         self.regularization = regularization
-        self.regularizer = regularizer
+        self.reg_lmb = reg_lmb
+        self.loss = loss
 
     def get_gradient(self, X: np.ndarray, y: np.ndarray):
         gradient = (2 * X.T.dot(X.dot(self.w) - y)) / X.shape[0]
-
         if self.descend_method == 'normalization_const':
             gradient /= np.linalg.norm(gradient)
 
-        if self.regularization == 'L2':
-            gradient += 2 * self.regularizer * self.w / X.shape[0]
-        elif self.regularization == 'L1':
-            gradient += self.regularizer * np.sign(self.w) / X.shape[0]
-
         return gradient
 
-    def fit(self, design_matrix: np.ndarray, target: np.ndarray):
-        design_matrix = add_ones_feature(design_matrix)
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = add_ones_feature(X)
 
         i = 0
-        self.w = np.zeros(design_matrix.shape[1])
-        y_pred = design_matrix.dot(self.w)
-        while i < self.S and MSE.get_loss(y_pred, target) > self.tolerance:
-            self.w -= self.alpha * self.get_gradient(design_matrix, target)
-            y_pred = design_matrix.dot(self.w)
-
+        self.w = np.zeros(X.shape[1])
+        y_ = X.dot(self.w)
+        while i < self.S and MSE.get_loss(y_, y) > self.tolerance:
+            self.w -= self.alpha * self.get_gradient(X, y)
+            self.regularize(X.shape[0])
+            y_ = X.dot(self.w)
             i += 1
 
     def predict(self, design_matrix: np.ndarray) -> np.ndarray:
@@ -75,16 +87,6 @@ class StandardGradientDescend:
 
 
 class StohasticAverageGradient:
-    w: np.ndarray
-    grads: np.ndarray
-    is_calculated: np.ndarray
-    grads_sum: np.ndarray
-    forgetting_rate: float
-    alpha: float
-    E: int
-    moving_average: float
-    tolerance: float
-
     def __init__(self, alpha, forgetting_rate, E=1, tolerance=1):
         self.alpha = alpha
         self.forgetting_rate = forgetting_rate
