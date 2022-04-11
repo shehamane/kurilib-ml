@@ -1,9 +1,7 @@
-import random
 from abc import ABC, abstractmethod
 import numpy as np
 from data import add_ones_feature
-from quality_functional import LossFunction, MSE, MAE
-from copy import deepcopy
+from quality_functional import LossFunction, MSE, LogisticLoss, sigmoid, MAE
 
 
 class Model(ABC):
@@ -32,43 +30,46 @@ class AnalyticalSolution(Model):
 
 
 class GradientDescent(Model, ABC):
-    def __init__(self):
+    def __init__(self, alpha, tolerance,
+                 regularization, reg_lmb, descent_method, loss):
         self.w = None
-        self.reg_lmb = None
-        self.regularization = None
+        self._alpha = alpha
+        self._tolerance = tolerance
+        self.__reg_lmb = reg_lmb
+        self.__regularization = regularization
+        self.__descent_method = descent_method
+        self.__loss = loss
 
-    @abstractmethod
-    def get_gradient(self, X, y):
-        pass
+    def _get_gradient(self, X, y):
+        if self.__loss == MSE:
+            gradient = (2 / X.shape[0]) * X.T.dot(X.dot(self.w) - y)
+        elif self.__loss == LogisticLoss:
+            gradient = -(X * (y - sigmoid(X.dot(self.w)))).sum(axis=0)
+        elif self.__loss == MAE:
+            gradient = np.sign(X.dot(self.w) - y)
+
+        if 'normalization' in self.__descent_method:
+            gradient /= np.linalg.norm(gradient)
+        return gradient
 
     def regularize(self, N: int):
-        if self.regularization == 'L2':
-            self.w -= (2 * self.reg_lmb / N) * self.w
-        elif self.regularization == 'L1':
-            self.w -= (self.reg_lmb / N) * np.sign(self.w)
+        if self.__regularization == 'L2':
+            self.w -= (2 * self.__reg_lmb / N) * self.w
+        elif self.__regularization == 'L1':
+            self.w -= (self.__reg_lmb / N) * np.sign(self.w)
+
+    def predict(self, X: np.ndarray):
+        X = add_ones_feature(X)
+        if self.__loss == LogisticLoss:
+            return sigmoid(X.dot(self.w))
+        return X.dot(self.w)
 
 
 class StandardGradientDescent(GradientDescent):
     def __init__(self, alpha, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
                  descent_method: str = 'const', loss: LossFunction = MSE):
-        self.w = None
-        self.Descent_method = descent_method
-        if descent_method == 'const' or descent_method == 'normalization_const':
-            self.alpha = alpha
-        if S <= 0 or tolerance <= 0:
-            raise Exception('S and tolerance must be positive')
-        self.S = S
-        self.tolerance = tolerance
-        self.regularization = regularization
-        self.reg_lmb = reg_lmb
-        self.loss = loss
-
-    def get_gradient(self, X: np.ndarray, y: np.ndarray):
-        gradient = (2 * X.T.dot(X.dot(self.w) - y)) / X.shape[0]
-        if self.Descent_method == 'normalization_const':
-            gradient /= np.linalg.norm(gradient)
-
-        return gradient
+        super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
+        self.__S = S
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         X = add_ones_feature(X)
@@ -76,90 +77,40 @@ class StandardGradientDescent(GradientDescent):
         i = 0
         self.w = np.zeros(X.shape[1])
         y_ = X.dot(self.w)
-        while i < self.S and MSE.get_loss(y_, y) > self.tolerance:
-            self.w -= self.alpha * self.get_gradient(X, y)
+        while i < self.__S and MSE.get_loss(y_, y) > self._tolerance:
+            self.w -= self._alpha * self._get_gradient(X, y)
             self.regularize(X.shape[0])
             y_ = X.dot(self.w)
             i += 1
 
-    def predict(self, design_matrix: np.ndarray) -> np.ndarray:
-        design_matrix = add_ones_feature(design_matrix)
-        return design_matrix.dot(self.w)
 
+class StochasticGradientDescent(GradientDescent):
+    def __init__(self, alpha: float, eras: int, batch_size: int, tolerance: float, loss: LossFunction,
+                 descent_method: str = 'const', regularization: str = None, reg_lmb: float = None):
+        super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
+        self.__eras = eras
+        self.__batch_size = batch_size
 
-# class StochasticAverageGradientDescent(GradientDescent):
-#     def __init__(self, alpha, E: int, tolerance: float = 1, forgetting_rate: float = 0.5, regularization=None,
-#                  reg_lmb=None,
-#                  descent_method: str = 'const', loss: LossFunction = MSE):
-#         self.grads = None
-#         self.descent_method = descent_method
-#         self.alpha = alpha
-#         self.grads_sum = None
-#         self.forgetting_rate = forgetting_rate
-#         self.moving_average = 0
-#         self.w = None
-#         self.Descent_method = descent_method
-#         if descent_method == 'const' or descent_method == 'normalization_const':
-#             self.alpha = alpha
-#         if E <= 0 or tolerance <= 0:
-#             raise Exception('E and tolerance must be positive')
-#         self.E = E
-#         self.tolerance = tolerance
-#         self.regularization = regularization
-#         self.reg_lmb = reg_lmb
-#         self.loss = loss
-#
-#     def get_gradient(self, X, y):
-#         gradient = (2 * X.T.dot(X.dot(self.w) - y)) / X.shape[0]
-#
-#         return gradient
-#
-#     def calc_grads(self, X, y):
-#         self.grads = np.empty(X.shape)
-#         for i in range(0, X.shape[0]):
-#             self.grads[i] = self.get_gradient(X[i], y[i])
-#             self.grads_sum += self.grads[i]
-#
-#     def calc_moving_average(self, new_error: float):
-#         if self.moving_average > 0:
-#             self.moving_average *= 1 - self.forgetting_rate
-#         self.moving_average += new_error * self.forgetting_rate
-#
-#     def recalc_grad_sum(self, old_grad, new_grad):
-#         self.grads_sum -= old_grad - new_grad
-#
-#     def recalc_grad(self, X, y, idx):
-#         old_grad = deepcopy(self.grads[idx])
-#         self.grads[idx] = self.get_gradient(X, y)
-#         self.recalc_grad_sum(old_grad, self.grads[idx])
-#
-#     def shuffle(self, X, y) -> (np.ndarray, np.ndarray):
-#         M = np.c_[X, y]
-#         np.random.shuffle(M)
-#         return M[:, :-1], M[:, -1]
-#
-#     def fit(self, X: np.ndarray, y: np.ndarray):
-#         X = add_ones_feature(X)
-#
-#         self.w = np.zeros(shape=X.shape[1])
-#         self.grads_sum = np.zeros(shape=X.shape[1])
-#         self.calc_grads(X, y)
-#
-#         for e in range(0, self.E):
-#             X, y = self.shuffle(X, y)
-#             for i in range(0, X.shape[0]):
-#                 self.recalc_grad(X[i], y[i], i)
-#
-#                 if self.descent_method == 'normalization const':
-#                     self.w -= (self.alpha / X.shape[0]) * self.grads_sum / np.linalg.norm(self.grads_sum)
-#                 else:
-#                     self.w -= (self.alpha / X.shape[0]) * self.grads_sum
-#
-#                 err = MSE.get_single_loss(y[i], X[i].dot(self.w))
-#                 self.calc_moving_average(err)
-#
-#     def predict(self, design_matrix: np.ndarray):
-#         design_matrix = add_ones_feature(design_matrix)
-#         return design_matrix.dot(self.w)
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = add_ones_feature(X)
+        self.w = np.zeros(X.shape[1])
 
+        for era in range(0, self.__eras):
+            i = self.__batch_size
+            while i <= X.shape[0]:
+                X_batch = X[i - self.__batch_size: i]
+                y_batch = y[i - self.__batch_size: i]
+                self.w -= self._alpha * self._get_gradient(X_batch, y_batch)
+                self.regularize(X.shape[0])
 
+                if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
+                    return
+                i += self.__batch_size
+
+            X_batch = X[i - self.__batch_size: X.shape[0]]
+            y_batch = y[i - self.__batch_size: X.shape[0]]
+            self.w -= self._alpha * self._get_gradient(X_batch, y_batch)
+            self.regularize(X.shape[0])
+
+            if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
+                return
