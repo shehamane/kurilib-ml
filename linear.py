@@ -1,7 +1,9 @@
+import copy
 from abc import ABC, abstractmethod
 import numpy as np
-from data import add_ones_feature
+from data import add_ones_feature, allocate_positive_class
 from quality_functional import LossFunction, MSE, LogisticLoss, sigmoid, MAE
+import pandas as pd
 
 
 class Model(ABC):
@@ -42,7 +44,7 @@ class GradientDescent(Model, ABC):
         else:
             raise Exception('Tolerance must be positive')
         self.__reg_lmb = reg_lmb
-        if regularization in ['L1', 'L2']:
+        if regularization in ['L1', 'L2', None]:
             self.__regularization = regularization
         else:
             raise Exception('No such regularization method')
@@ -50,14 +52,14 @@ class GradientDescent(Model, ABC):
             self.__descent_method = descent_method
         else:
             raise Exception('No such descent method')
-        self.__loss = loss
+        self._loss = loss
 
     def _get_gradient(self, X, y):
-        if self.__loss == MSE:
+        if self._loss == MSE:
             gradient = (2 / X.shape[0]) * X.T.dot(X.dot(self.w) - y)
-        elif self.__loss == LogisticLoss:
-            gradient = -(X * (y - sigmoid(X.dot(self.w)))).sum(axis=0)
-        elif self.__loss == MAE:
+        elif self._loss == LogisticLoss:
+            gradient = -(X.T.dot(y - sigmoid(X.dot(self.w))))
+        elif self._loss == MAE:
             gradient = np.sign(X.dot(self.w) - y)
         else:
             raise Exception('Gradient cannot be found for this loss-function')
@@ -74,7 +76,7 @@ class GradientDescent(Model, ABC):
 
     def predict(self, X: np.ndarray):
         X = add_ones_feature(X)
-        if self.__loss == LogisticLoss:
+        if self._loss == LogisticLoss:
             return sigmoid(X.dot(self.w))
         return X.dot(self.w)
 
@@ -94,7 +96,7 @@ class StandardGradientDescent(GradientDescent):
         i = 0
         self.w = np.zeros(X.shape[1])
         y_pred = X.dot(self.w)
-        while i < self.__S and (self.__loss == LogisticLoss or self.__loss.get_loss(y_pred, y) > self._tolerance):
+        while i < self.__S and (self._loss == LogisticLoss or self._loss.get_loss(y_pred, y) > self._tolerance):
             self.w -= self._alpha * self._get_gradient(X, y)
             self.regularize(X.shape[0])
             y_pred = X.dot(self.w)
@@ -102,7 +104,7 @@ class StandardGradientDescent(GradientDescent):
 
 
 class StochasticGradientDescent(GradientDescent):
-    def __init__(self, alpha: float, eras: int, batch_size: int, tolerance: float, loss: LossFunction,
+    def __init__(self, alpha: float, eras: int, batch_size: int, tolerance: float = 1, loss: LossFunction = MSE,
                  descent_method: str = 'const', regularization: str = None, reg_lmb: float = None):
         super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
         self.__eras = eras
@@ -131,3 +133,27 @@ class StochasticGradientDescent(GradientDescent):
 
             if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
                 return
+
+
+class OneVsAllClassifier(Model):
+    def __init__(self, base_classifier):
+        if type(base_classifier) not in [StandardGradientDescent, StochasticGradientDescent]:
+            raise Exception('This classifier is not supported')
+        self.__base_classifier = base_classifier
+        self.__classifiers = None
+        self.__classes = None
+
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        if y.dtype != 'category':
+            raise Exception('Target must be categorical')
+        self.__classes = y.unique()
+        self.__classifiers = [copy.deepcopy(self.__base_classifier) for i in range(0, self.__classes.size)]
+        for idx, cls in enumerate(self.__classes):
+            target = allocate_positive_class(y, cls)
+            self.__classifiers[idx].fit(X.to_numpy(), target.to_numpy())
+
+    def predict(self, X: np.ndarray):
+        probas = np.zeros(shape=(self.__classes.size, X.shape[0]))
+        for idx, classifier in enumerate(self.__classifiers):
+            probas[idx] = classifier.predict(X)
+        return [self.__classes[idx] for idx in np.argmax(probas, axis=0)]
