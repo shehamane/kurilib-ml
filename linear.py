@@ -1,6 +1,8 @@
 import copy
 from abc import ABC, abstractmethod
 import numpy as np
+
+import data
 from data import add_ones_feature, allocate_positive_class
 from quality_functional import LossFunction, MSE, LogisticLoss, sigmoid, MAE
 import pandas as pd
@@ -143,7 +145,7 @@ class OneVsAllClassifier(Model):
         self.__classifiers = None
         self.__classes = None
 
-    def fit(self, X: pd.DataFrame, y: pd.Series):
+    def fit(self, X: np.ndarray, y: pd.Series):
         if y.dtype != 'category':
             raise Exception('Target must be categorical')
         self.__classes = y.unique()
@@ -156,4 +158,42 @@ class OneVsAllClassifier(Model):
         probas = np.zeros(shape=(self.__classes.size, X.shape[0]))
         for idx, classifier in enumerate(self.__classifiers):
             probas[idx] = classifier.predict(X)
-        return [self.__classes[idx] for idx in np.argmax(probas, axis=0)]
+        return np.array([self.__classes[idx] for idx in np.argmax(probas, axis=0)])
+
+
+class AllVsAllClassifier(Model):
+    def __init__(self, base_classifier):
+        if type(base_classifier) not in [StandardGradientDescent, StochasticGradientDescent]:
+            raise Exception('This classifier is not supported')
+        self.__base_classifier = base_classifier
+        self.__classifiers = None
+        self.__classes = None
+
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        if y.dtype != 'category':
+            raise Exception('Target must be categorical')
+        self.__classes = y.unique()
+        self.__classifiers = []
+        for i, lcls in enumerate(self.__classes[:-1]):
+            for j, rcls in enumerate(self.__classes[i + 1:]):
+                X_new, y_new = data.pos_neg_allocate(X, y, lcls, rcls)
+                self.__classifiers.append(copy.deepcopy(self.__base_classifier))
+                self.__classifiers[-1].fit(X_new.to_numpy(), y_new.to_numpy())
+
+    def predict(self, X: pd.DataFrame):
+        X = X.to_numpy()
+        idx = 0
+        predictions = np.empty(shape=(X.shape[0], len(self.__classifiers)), dtype='O')
+        final_predictions = np.empty(shape=X.shape[0], dtype='O')
+        for i, lcls in enumerate(self.__classes[:-1]):
+            for rcls in self.__classes[i + 1:]:
+                probas = self.__classifiers[idx].predict(X)
+                predictions[:, idx] = np.array([lcls if proba > 0.5 else rcls for proba in probas])
+                idx += 1
+
+        for i, prediction in enumerate(predictions):
+            unique, pos = np.unique(prediction, return_inverse=True)
+            maxpos = np.bincount(pos).argmax()
+            final_predictions[i] = unique[maxpos]
+
+        return pd.Series(final_predictions, dtype='category')

@@ -18,3 +18,13 @@ def normalize_columns(df: pd.DataFrame, columns: [str], method='minimax'):
 def allocate_positive_class(feature: pd.Series, positive: str):
     feature_np = feature.to_numpy()
     return pd.Series(np.where(feature_np == positive, 1, 0))
+
+
+def pos_neg_allocate(X: pd.DataFrame, y: pd.Series, positive_class: str, negative_class: str) -> (
+        np.ndarray, np.ndarray):
+    positive_indexes = y[y == positive_class].index
+    negative_indexes = y[y == negative_class].index
+    X = X.loc[positive_indexes].append(X.loc[negative_indexes])
+    y = y[positive_indexes].append(y[negative_indexes])
+    y = pd.Series(np.where(y == positive_class, 1, 0))
+    return X, y
