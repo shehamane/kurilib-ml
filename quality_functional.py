@@ -46,7 +46,16 @@ def sigmoid(x: np.ndarray):
     return 1 / (1 + np.exp(-x))
 
 
-class LogisticLoss():
+class LogisticLoss:
     @staticmethod
     def get_loss(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
         return -(y * np.log(sigmoid(w.dot(x))) + (1 - y) * np.log(sigmoid(-w.dot(x)))).sum()
+
+
+class Accuracy:
+    @staticmethod
+    def get_accuracy(y_exp: np.ndarray, y_pred: np.ndarray):
+        size = len(y_exp)
+        if size != len(y_pred):
+            raise Exception('Incompatible sizes')
+        return (y_exp == y_pred).sum() / size
