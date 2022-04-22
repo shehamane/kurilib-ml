@@ -10,7 +10,7 @@ import pandas as pd
 
 class Model(ABC):
     @abstractmethod
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    def fit(self, X: pd.DataFrame, y: pd.Series):
         pass
 
     @abstractmethod
@@ -24,13 +24,13 @@ class AnalyticalSolution(Model):
     def __init__(self):
         pass
 
-    def fit(self, design_matrix: np.ndarray, target: np.ndarray):
-        design_matrix = add_ones_feature(design_matrix)
-        self.w = np.linalg.inv(design_matrix.T.dot(design_matrix)).dot(design_matrix.T).dot(target)
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = add_ones_feature(X)
+        self.w = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(y)
 
-    def predict(self, design_matrix: np.ndarray) -> np.ndarray:
-        design_matrix = add_ones_feature(design_matrix)
-        return design_matrix.dot(self.w)
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = add_ones_feature(X)
+        return X.dot(self.w)
 
 
 class GradientDescent(Model, ABC):
@@ -76,7 +76,9 @@ class GradientDescent(Model, ABC):
         elif self.__regularization == 'L1':
             self.w -= (self.__reg_lmb / N) * np.sign(self.w)
 
-    def predict(self, X: np.ndarray):
+    def predict(self, X: pd.DataFrame):
+        X = X.to_numpy()
+
         X = add_ones_feature(X)
         if self._loss == LogisticLoss:
             return sigmoid(X.dot(self.w))
@@ -92,7 +94,8 @@ class StandardGradientDescent(GradientDescent):
         else:
             raise Exception('S must be positive')
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        X, y = X.to_numpy(), y.to_numpy()
         X = add_ones_feature(X)
 
         i = 0
@@ -112,7 +115,9 @@ class StochasticGradientDescent(GradientDescent):
         self.__eras = eras
         self.__batch_size = batch_size
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        X, y = X.to_numpy(), y.to_numpy()
+
         X = add_ones_feature(X)
         self.w = np.zeros(X.shape[1])
 
@@ -145,7 +150,9 @@ class OneVsAllClassifier(Model):
         self.__classifiers = None
         self.__classes = None
 
-    def fit(self, X: np.ndarray, y: pd.Series):
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        X = X.to_numpy()
+
         if y.dtype != 'category':
             raise Exception('Target must be categorical')
         self.__classes = y.unique()
@@ -154,7 +161,9 @@ class OneVsAllClassifier(Model):
             target = allocate_positive_class(y, cls)
             self.__classifiers[idx].fit(X.to_numpy(), target.to_numpy())
 
-    def predict(self, X: np.ndarray):
+    def predict(self, X: pd.DataFrame):
+        X = X.to_numpy()
+
         probas = np.zeros(shape=(self.__classes.size, X.shape[0]))
         for idx, classifier in enumerate(self.__classifiers):
             probas[idx] = classifier.predict(X)
