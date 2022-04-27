@@ -1,21 +1,11 @@
 import copy
-from abc import ABC, abstractmethod
+from abc import ABC
 import numpy as np
 
-import data
-from data import add_ones_feature, allocate_positive_class
+from base import Model
+from data import add_ones_feature, allocate_positive_class, pos_neg_allocate
 from quality_functional import LossFunction, MSE, LogisticLoss, sigmoid, MAE
 import pandas as pd
-
-
-class Model(ABC):
-    @abstractmethod
-    def fit(self, X: pd.DataFrame, y: pd.Series):
-        pass
-
-    @abstractmethod
-    def predict(self, X: np.ndarray):
-        pass
 
 
 class AnalyticalSolution(Model):
@@ -159,7 +149,7 @@ class OneVsAllClassifier(Model):
         self.__classifiers = [copy.deepcopy(self.__base_classifier) for i in range(0, self.__classes.size)]
         for idx, cls in enumerate(self.__classes):
             target = allocate_positive_class(y, cls)
-            self.__classifiers[idx].fit(X.to_numpy(), target.to_numpy())
+            self.__classifiers[idx].fit(X, target)
 
     def predict(self, X: pd.DataFrame):
         X = X.to_numpy()
@@ -185,7 +175,7 @@ class AllVsAllClassifier(Model):
         self.__classifiers = []
         for i, lcls in enumerate(self.__classes[:-1]):
             for j, rcls in enumerate(self.__classes[i + 1:]):
-                X_new, y_new = data.pos_neg_allocate(X, y, lcls, rcls)
+                X_new, y_new = pos_neg_allocate(X, y, lcls, rcls)
                 self.__classifiers.append(copy.deepcopy(self.__base_classifier))
                 self.__classifiers[-1].fit(X_new.to_numpy(), y_new.to_numpy())
 
