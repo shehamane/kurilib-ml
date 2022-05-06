@@ -30,7 +30,7 @@ class kNearestNeighbors:
         else:
             raise Exception(f'No such choice method: {choice_method}')
 
-        if window_width > 0:
+        if window_width is not None and window_width > 0 or choice_method != 'weighted':
             self.__window_width = window_width
         else:
             raise Exception('Window width must be positive')
@@ -41,12 +41,12 @@ class kNearestNeighbors:
             self.__target = y.to_numpy()
 
     def set_metrics(self, metric):
-        self.__metrics = self.__class__.metrics_map[metric]
+        self.__metrics = self.__class__.__metrics_map[metric]
 
     def set_choice_method(self, choice_method):
         self.__choice_method = choice_method
 
-    def __exhaustive_search(self, x: np.ndarray):
+    def __exhaustive_search(self, x: np.ndarray) -> (np.ndarray, np.ndarray):
         neighbors_idx = []
         neighbors_dists = []
         idx = 0
@@ -62,39 +62,45 @@ class kNearestNeighbors:
                 neighbors_dists.append(dist)
                 neighbors_idx.append(idx)
             idx += 1
-        return neighbors_idx
+        return self.__data[neighbors_idx], self.__target[neighbors_idx]
 
-    def __get_most_freq_class(self, objects_idx: list):
-        target = self.__target[objects_idx]
-        unique, pos = np.unique(target, return_inverse=True)
+    def __search(self, x: np.ndarray) -> (np.ndarray, np.ndarray):
+        if self.__search_method == 'exhaustive':
+            return self.__exhaustive_search(x)
+
+    @staticmethod
+    def __get_most_freq_class(targets: np.ndarray):
+        unique, pos = np.unique(targets, return_inverse=True)
         maxpos = np.bincount(pos).argmax()
         return unique[maxpos]
 
-    def __get_most_heavy_class(self, u: np.ndarray, objects_idx: list):
-        def gaussian_kernel(x):
-            return math.pow(math.e, -2 * math.pow(x, 2)) / math.sqrt(2 * math.pi)
+    def __get_most_heavy_class(self, x, neighbors: np.ndarray, targets: np.ndarray):
+        def gaussian_kernel(u):
+            return math.pow(math.e, -2 * math.pow(u, 2)) / math.sqrt(2 * math.pi)
 
         max_sum = 0
         max_class = None
         for cls in self.__classes:
-            sum = 0
-            for idx in objects_idx:
-                if self.__target[idx] == cls:
-                    sum += gaussian_kernel(self.__metrics.get_distance(u, self.__data[idx]) / self.__window_width)
-            if sum > max_sum:
-                max_sum = sum
+            weighted_sum = 0
+            for i, target in enumerate(targets):
+                if target == cls:
+                    weighted_sum += gaussian_kernel(self.__metrics.get_distance(x, neighbors[i])
+                                                    / self.__window_width)
+            if weighted_sum > max_sum:
+                max_sum = weighted_sum
                 max_class = cls
 
         return max_class
 
     def __predict_once(self, x: np.ndarray):
+        neighbors, targets = None, None
         if self.__search_method == 'exhaustive':
-            neighbors_idx = self.__exhaustive_search(x)
+            neighbors, targets = self.__search(x)
 
         if self.__choice_method == 'maxentry':
-            return self.__get_most_freq_class(neighbors_idx)
+            return self.__get_most_freq_class(targets)
         elif self.__choice_method == 'weighted':
-            return self.__get_most_heavy_class(x, neighbors_idx)
+            return self.__get_most_heavy_class(x, neighbors, targets)
 
     def predict(self, X: pd.DataFrame):
         predictions = np.empty(shape=X.shape[0], dtype='O')
