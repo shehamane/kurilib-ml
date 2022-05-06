@@ -67,7 +67,8 @@ class GradientDescent(Model, ABC):
             self.w -= (self.__reg_lmb / N) * np.sign(self.w)
 
     def predict(self, X: pd.DataFrame):
-        X = X.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
 
         X = add_ones_feature(X)
         if self._loss == LogisticLoss:
@@ -85,7 +86,10 @@ class StandardGradientDescent(GradientDescent):
             raise Exception('S must be positive')
 
     def fit(self, X: pd.DataFrame, y: pd.Series):
-        X, y = X.to_numpy(), y.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
+        if type(y) is not np.ndarray:
+            y = y.to_numpy()
         X = add_ones_feature(X)
 
         i = 0
@@ -102,11 +106,20 @@ class StochasticGradientDescent(GradientDescent):
     def __init__(self, alpha: float, eras: int, batch_size: int, tolerance: float = 1, loss: LossFunction = MSE,
                  descent_method: str = 'const', regularization: str = None, reg_lmb: float = None):
         super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
-        self.__eras = eras
-        self.__batch_size = batch_size
+        if eras > 0:
+            self.__eras = eras
+        else:
+            raise Exception('Eras number must be positive')
+        if batch_size > 0:
+            self.__batch_size = batch_size
+        else:
+            raise Exception('Batch size must be positive')
 
     def fit(self, X: pd.DataFrame, y: pd.Series):
-        X, y = X.to_numpy(), y.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
+        if type(y) is not np.ndarray:
+            y = y.to_numpy()
 
         X = add_ones_feature(X)
         self.w = np.zeros(X.shape[1])
@@ -141,18 +154,20 @@ class OneVsAllClassifier(Model):
         self.__classes = None
 
     def fit(self, X: pd.DataFrame, y: pd.Series):
-        X = X.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
 
         if y.dtype != 'category':
             raise Exception('Target must be categorical')
         self.__classes = y.unique()
-        self.__classifiers = [copy.deepcopy(self.__base_classifier) for i in range(0, self.__classes.size)]
+        self.__classifiers = [copy.deepcopy(self.__base_classifier) for _ in range(0, self.__classes.size)]
         for idx, cls in enumerate(self.__classes):
             target = allocate_positive_class(y, cls)
             self.__classifiers[idx].fit(X, target)
 
     def predict(self, X: pd.DataFrame):
-        X = X.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
 
         probas = np.zeros(shape=(self.__classes.size, X.shape[0]))
         for idx, classifier in enumerate(self.__classifiers):
@@ -180,7 +195,9 @@ class AllVsAllClassifier(Model):
                 self.__classifiers[-1].fit(X_new.to_numpy(), y_new.to_numpy())
 
     def predict(self, X: pd.DataFrame):
-        X = X.to_numpy()
+        if type(X) is not np.ndarray:
+            X = X.to_numpy()
+
         idx = 0
         predictions = np.empty(shape=(X.shape[0], len(self.__classifiers)), dtype='O')
         final_predictions = np.empty(shape=X.shape[0], dtype='O')
