@@ -13,17 +13,32 @@ class kNearestNeighbors:
 
     def __init__(self, k, X: pd.DataFrame, y: pd.Series, metric: str = 'euclidian',
                  search_method='exhaustive', choice_method='maxentry', window_width=None):
-        self.__k = k
-        self.__search_method = search_method
+        if k > 0:
+            self.__k = k
+        else:
+            raise Exception('K must be positive')
+
+        if search_method in ['exhaustive', 'kdtree']:
+            self.__search_method = search_method
+        else:
+            raise Exception(f'No such search method: {search_method}')
+
         self.__metrics = self.__class__.__metrics_map[metric]
-        self.__choice_method = choice_method
-        self.__window_width = window_width
+
+        if choice_method in ['maxentry', 'weighted']:
+            self.__choice_method = choice_method
+        else:
+            raise Exception(f'No such choice method: {choice_method}')
+
+        if window_width > 0:
+            self.__window_width = window_width
+        else:
+            raise Exception('Window width must be positive')
+
         self.__classes = y.unique()
         if search_method == 'exhaustive':
             self.__data = X.to_numpy()
             self.__target = y.to_numpy()
-        if choice_method == 'weighted' and window_width is None:
-            raise Exception('Window width is not defined')
 
     def set_metrics(self, metric):
         self.__metrics = self.__class__.metrics_map[metric]
@@ -83,7 +98,7 @@ class kNearestNeighbors:
 
     def predict(self, X: pd.DataFrame):
         predictions = np.empty(shape=X.shape[0], dtype='O')
-        # X = X.to_numpy()
+        X = X.to_numpy()
         for i, obj in enumerate(X):
             predictions[i] = self.__predict_once(obj)
         return predictions
