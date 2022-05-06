@@ -13,6 +13,7 @@ class kNearestNeighbors:
 
     def __init__(self, k, X: pd.DataFrame, y: pd.Series, metric: str = 'euclidian',
                  search_method='exhaustive', choice_method='maxentry', window_width=None):
+
         if k > 0:
             self.__k = k
         else:
@@ -25,17 +26,20 @@ class kNearestNeighbors:
 
         self.__metrics = self.__class__.__metrics_map[metric]
 
-        if choice_method in ['maxentry', 'weighted']:
+        if choice_method in ['maxentry', 'weighted', 'kernel-regression']:
             self.__choice_method = choice_method
         else:
             raise Exception(f'No such choice method: {choice_method}')
 
-        if window_width is not None and window_width > 0 or choice_method != 'weighted':
+        if window_width is not None and window_width > 0 or choice_method == 'maxentry':
             self.__window_width = window_width
         else:
             raise Exception('Window width must be positive')
 
-        self.__classes = y.unique()
+        if X.shape[0] != y.shape[0]:
+            raise Exception('X and y are incompatible shapes')
+        if choice_method != 'kernel-regression':
+            self.__classes = y.unique()
         if search_method == 'exhaustive':
             self.__data = X.to_numpy()
             self.__target = y.to_numpy()
@@ -69,14 +73,28 @@ class kNearestNeighbors:
             return self.__exhaustive_search(x)
 
     @staticmethod
+    def __gaussian_kernel(x):
+        return math.pow(math.e, -2 * math.pow(x, 2)) / math.sqrt(2 * math.pi)
+
+    def __nadarai_watson(self, x, neighbors: np.ndarray, targets: np.ndarray):
+        return np.sum(
+            [self.__gaussian_kernel(
+                self.__metrics.get_distance(x, neighbors[i]) / self.__window_width
+            ) * targets[i] for i in range(0, neighbors.shape[0])]
+        ) \
+               / np.sum(
+            [self.__gaussian_kernel(
+                self.__metrics.get_distance(x, neighbor) / self.__window_width
+            ) for neighbor in neighbors]
+        )
+
+    @staticmethod
     def __get_most_freq_class(targets: np.ndarray):
         unique, pos = np.unique(targets, return_inverse=True)
         maxpos = np.bincount(pos).argmax()
         return unique[maxpos]
 
     def __get_most_heavy_class(self, x, neighbors: np.ndarray, targets: np.ndarray):
-        def gaussian_kernel(u):
-            return math.pow(math.e, -2 * math.pow(u, 2)) / math.sqrt(2 * math.pi)
 
         max_sum = 0
         max_class = None
@@ -84,8 +102,8 @@ class kNearestNeighbors:
             weighted_sum = 0
             for i, target in enumerate(targets):
                 if target == cls:
-                    weighted_sum += gaussian_kernel(self.__metrics.get_distance(x, neighbors[i])
-                                                    / self.__window_width)
+                    weighted_sum += self.__gaussian_kernel(self.__metrics.get_distance(x, neighbors[i])
+                                                           / self.__window_width)
             if weighted_sum > max_sum:
                 max_sum = weighted_sum
                 max_class = cls
@@ -101,9 +119,14 @@ class kNearestNeighbors:
             return self.__get_most_freq_class(targets)
         elif self.__choice_method == 'weighted':
             return self.__get_most_heavy_class(x, neighbors, targets)
+        elif self.__choice_method == 'kernel-regression':
+            return self.__nadarai_watson(x, neighbors, targets)
 
     def predict(self, X: pd.DataFrame):
-        predictions = np.empty(shape=X.shape[0], dtype='O')
+        if self.__choice_method == 'kernel-regression':
+            predictions = np.empty(shape=X.shape[0])
+        else:
+            predictions = np.empty(shape=X.shape[0], dtype='O')
         X = X.to_numpy()
         for i, obj in enumerate(X):
             predictions[i] = self.__predict_once(obj)
