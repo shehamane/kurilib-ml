@@ -24,13 +24,13 @@ class AnalyticalSolution(Model):
 
 
 class GradientDescent(Model, ABC):
-    def __init__(self, alpha: float, tolerance: float,
+    def __init__(self, step: float, tolerance: float,
                  regularization: str, reg_lmb: float, descent_method: str, loss: LossFunction):
         self.w = None
-        if alpha > 0:
-            self._alpha = alpha
+        if step > 0:
+            self._step = step
         else:
-            raise Exception('Alpha must be positive')
+            raise Exception('step must be positive')
         if tolerance is None or tolerance > 0:
             self._tolerance = tolerance
         else:
@@ -60,7 +60,10 @@ class GradientDescent(Model, ABC):
             gradient /= np.linalg.norm(gradient)
         return gradient
 
-    def regularize(self, N: int):
+    def _init_w(self, n):
+        self.w = -1 / (2 * n) + np.random.rand(n) * 1 / n
+
+    def _regularize(self, N: int):
         if self.__regularization == 'L2':
             self.w -= (2 * self.__reg_lmb / N) * self.w
         elif self.__regularization == 'L1':
@@ -77,9 +80,9 @@ class GradientDescent(Model, ABC):
 
 
 class StandardGradientDescent(GradientDescent):
-    def __init__(self, alpha, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
+    def __init__(self, step, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
                  descent_method: str = 'const', loss: LossFunction = MSE):
-        super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
+        super().__init__(step, tolerance, regularization, reg_lmb, descent_method, loss)
         if S > 0:
             self.__S = S
         else:
@@ -92,20 +95,21 @@ class StandardGradientDescent(GradientDescent):
             y = y.to_numpy()
         X = add_ones_feature(X)
 
-        i = 0
-        self.w = np.zeros(X.shape[1])
+        self._init_w(X.shape[0])
+
         y_pred = X.dot(self.w)
+        i = 0
         while i < self.__S and (self._loss == LogisticLoss or self._loss.get_loss(y_pred, y) > self._tolerance):
-            self.w -= self._alpha * self._get_gradient(X, y)
-            self.regularize(X.shape[0])
+            self.w -= self._step * self._get_gradient(X, y)
+            self._regularize(X.shape[0])
             y_pred = X.dot(self.w)
             i += 1
 
 
 class StochasticGradientDescent(GradientDescent):
-    def __init__(self, alpha: float, eras: int, batch_size: int, tolerance: float = 1, loss: LossFunction = MSE,
+    def __init__(self, step: float, eras: int, batch_size: int, tolerance: float = 1, loss: LossFunction = MSE,
                  descent_method: str = 'const', regularization: str = None, reg_lmb: float = None):
-        super().__init__(alpha, tolerance, regularization, reg_lmb, descent_method, loss)
+        super().__init__(step, tolerance, regularization, reg_lmb, descent_method, loss)
         if eras > 0:
             self.__eras = eras
         else:
@@ -120,26 +124,25 @@ class StochasticGradientDescent(GradientDescent):
             X = X.to_numpy()
         if type(y) is not np.ndarray:
             y = y.to_numpy()
-
         X = add_ones_feature(X)
-        self.w = np.zeros(X.shape[1])
 
+        self._init_w(X.shape[0])
         for era in range(0, self.__eras):
             i = self.__batch_size
             while i <= X.shape[0]:
                 X_batch = X[i - self.__batch_size: i]
                 y_batch = y[i - self.__batch_size: i]
-                self.w -= self._alpha * self._get_gradient(X_batch, y_batch)
-                self.regularize(X.shape[0])
+                self.w -= self._step * self._get_gradient(X_batch, y_batch)
+                self._regularize(X.shape[0])
 
-                if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
+                if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance and self._loss != LogisticLoss:
                     return
                 i += self.__batch_size
 
             X_batch = X[i - self.__batch_size: X.shape[0]]
             y_batch = y[i - self.__batch_size: X.shape[0]]
-            self.w -= self._alpha * self._get_gradient(X_batch, y_batch)
-            self.regularize(X.shape[0])
+            self.w -= self._step * self._get_gradient(X_batch, y_batch)
+            self._regularize(X.shape[0])
 
             if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
                 return
