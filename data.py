@@ -10,7 +10,7 @@ def minimax(arr: np.ndarray):
     return (arr - arr.min()) / (arr.max() - arr.min())
 
 
-def normalize_columns(df: pd.DataFrame, columns: [str], method='minimax'):
+def normalize_columns(df: pd.DataFrame, columns: [str]):
     for col_name in columns:
         df[col_name] = pd.Series(minimax(df[col_name]))
 
@@ -24,7 +24,7 @@ def pos_neg_allocate(X: pd.DataFrame, y: pd.Series, positive_class: str, negativ
         np.ndarray, np.ndarray):
     positive_indexes = y[y == positive_class].index
     negative_indexes = y[y == negative_class].index
-    X = X.loc[positive_indexes].append(X.loc[negative_indexes])
-    y = y[positive_indexes].append(y[negative_indexes])
+    X = pd.concat([X.loc[positive_indexes], X.loc[negative_indexes]], axis=0)
+    y = pd.concat([y[positive_indexes], y[negative_indexes]])
     y = pd.Series(np.where(y == positive_class, 1, 0))
     return X, y
