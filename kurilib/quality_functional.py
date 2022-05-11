@@ -1,4 +1,3 @@
-import math
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -12,7 +11,7 @@ class LossFunction(ABC):
 
     @staticmethod
     @abstractmethod
-    def get_loss(y_exp: np.ndarray, y_pred: np.ndarray):
+    def get_loss(y_exp: np.ndarray, y_pred: np.ndarray) -> object:
         pass
 
 
@@ -48,8 +47,8 @@ def sigmoid(x: np.ndarray):
 
 class LogisticLoss:
     @staticmethod
-    def get_loss(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
-        return -(y * np.log(sigmoid(w.dot(x))) + (1 - y) * np.log(sigmoid(-w.dot(x)))).sum()
+    def get_loss(X: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+        return -np.sum(np.multiply(y, np.log(sigmoid(X.dot(w)))) + np.multiply((1 - y), np.log(sigmoid(-X.dot(w)))))
 
 
 class Accuracy:
@@ -59,3 +58,11 @@ class Accuracy:
         if size != len(y_pred):
             raise Exception('Incompatible sizes')
         return (y_exp == y_pred).sum() / size
+
+
+loss_names_map = {
+    'MSE': MSE,
+    'MAE': MAE,
+    'logistic': LogisticLoss,
+    'accuracy': Accuracy
+}

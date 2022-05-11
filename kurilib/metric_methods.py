@@ -2,9 +2,9 @@ import math
 
 import numpy as np
 from scipy.spatial import KDTree
-
 import pandas as pd
-import metrics
+
+import kurilib.metrics as metrics
 
 
 class kNearestNeighbors:
@@ -47,12 +47,6 @@ class kNearestNeighbors:
 
         self.__X = X.to_numpy()
         self.__y = y.to_numpy()
-
-    def set_metrics(self, metric):
-        self.__metrics = self.__class__.__metrics_map[metric]
-
-    def set_choice_method(self, choice_method):
-        self.__choice_method = choice_method
 
     @staticmethod
     def __gaussian_kernel(x):

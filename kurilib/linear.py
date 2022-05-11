@@ -1,12 +1,13 @@
 import copy
 from abc import ABC
+
 import numpy as np
+import pandas as pd
 from scipy.optimize import minimize
 
-from base import Model
-from data import add_ones_feature, allocate_positive_class, pos_neg_allocate
-from quality_functional import LossFunction, MSE, LogisticLoss, sigmoid, MAE
-import pandas as pd
+from kurilib.base import Model
+from kurilib.data import add_ones_feature, allocate_positive_class, pos_neg_allocate
+from kurilib.quality_functional import MSE, LogisticLoss, sigmoid, MAE, loss_names_map
 
 
 class AnalyticalSolution(Model):
@@ -26,7 +27,7 @@ class AnalyticalSolution(Model):
 
 class GradientDescent(Model, ABC):
     def __init__(self, step: float, tolerance: float,
-                 regularization: str, reg_lmb: float, descent_method: str, loss: LossFunction):
+                 regularization: str, reg_lmb: float, descent_method: str, loss: str):
         self.w = None
         if descent_method != 'fastest':
             if step is not None and step > 0:
@@ -43,10 +44,15 @@ class GradientDescent(Model, ABC):
         else:
             raise Exception('No such regularization method')
         if descent_method in ['const', 'normalization const', 'fastest']:
+            if descent_method == 'fastest' and loss == LogisticLoss:
+                raise Exception('Fastest descent and logistic loss are incompatible')
             self.__descent_method = descent_method
         else:
             raise Exception('No such descent method')
-        self._loss = loss
+        if loss not in loss_names_map.keys():
+            raise Exception('No such loss-function')
+        else:
+            self._loss = loss_names_map[loss]
 
     def _get_gradient(self, X, y):
         if self._loss == MSE:
@@ -76,11 +82,18 @@ class GradientDescent(Model, ABC):
         if 'const' in self.__descent_method:
             return self._step
         elif self.__descent_method == 'fastest':
-            return minimize(
-                lambda step: self._loss.get_loss(X.dot(self.w - step * grad), y),
-                x0=np.array([0]),
-                bounds=[[0, None]]
-            ).x
+            if self._loss == LogisticLoss:
+                return minimize(
+                    lambda step: LogisticLoss.get_loss(X, y, self.w - step * grad),
+                    x0=np.array([0]),
+                    bounds=[[0, None]]
+                ).x
+            else:
+                return minimize(
+                    lambda step: self._loss.get_loss(X.dot(self.w - step * grad), y),
+                    x0=np.array([0]),
+                    bounds=[[0, None]]
+                ).x
 
     def predict(self, X: pd.DataFrame):
         if type(X) is not np.ndarray:
@@ -94,7 +107,7 @@ class GradientDescent(Model, ABC):
 
 class StandardGradientDescent(GradientDescent):
     def __init__(self, step, S: int, tolerance: float = 1, regularization=None, reg_lmb=None,
-                 descent_method: str = 'const', loss: LossFunction = MSE):
+                 descent_method: str = 'const', loss: str = 'MSE'):
         super().__init__(step, tolerance, regularization, reg_lmb, descent_method, loss)
         if S > 0:
             self.__S = S
@@ -121,7 +134,7 @@ class StandardGradientDescent(GradientDescent):
 
 
 class StochasticGradientDescent(GradientDescent):
-    def __init__(self, step: float, eras: int, batch_size: int, tolerance: float = 1, loss: LossFunction = MSE,
+    def __init__(self, step: float, eras: int, batch_size: int, tolerance: float = 1, loss: str = 'MSE',
                  descent_method: str = 'const', regularization: str = None, reg_lmb: float = None):
         super().__init__(step, tolerance, regularization, reg_lmb, descent_method, loss)
         if eras > 0:
@@ -146,9 +159,9 @@ class StochasticGradientDescent(GradientDescent):
             while i <= X.shape[0]:
                 X_batch = X[i - self.__batch_size: i]
                 y_batch = y[i - self.__batch_size: i]
-                grad = self._get_gradient(X, y)
-                self.w -= self._get_step(X, y, grad) * grad
-                self._regularize(X.shape[0])
+                grad = self._get_gradient(X_batch, y_batch)
+                self.w -= self._get_step(X_batch, y_batch, grad) * grad
+                self._regularize(X_batch.shape[0])
 
                 if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance and self._loss != LogisticLoss:
                     return
@@ -156,9 +169,9 @@ class StochasticGradientDescent(GradientDescent):
 
             X_batch = X[i - self.__batch_size: X.shape[0]]
             y_batch = y[i - self.__batch_size: X.shape[0]]
-            grad = self._get_gradient(X, y)
-            self.w -= self._get_step(X, y, grad) * grad
-            self._regularize(X.shape[0])
+            grad = self._get_gradient(X_batch, y_batch)
+            self.w -= self._get_step(X_batch, y_batch, grad) * grad
+            self._regularize(X_batch.shape[0])
 
             if MSE.get_loss(X_batch.dot(self.w), y_batch) < self._tolerance:
                 return
