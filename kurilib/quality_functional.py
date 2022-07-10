@@ -48,7 +48,8 @@ def sigmoid(x: np.ndarray):
 class LogisticLoss:
     @staticmethod
     def get_loss(X: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
-        return -np.sum(np.multiply(y, np.log(sigmoid(X.dot(w)))) + np.multiply((1 - y), np.log(sigmoid(-X.dot(w)))))
+        return -np.sum(np.multiply(y, np.log(sigmoid(X.dot(w)))) +
+                       np.multiply((1 - y), np.log(sigmoid(-X.dot(w)))))
 
 
 class Accuracy:
